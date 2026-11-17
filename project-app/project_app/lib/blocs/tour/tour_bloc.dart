@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:bloc/bloc.dart';
 import 'package:dio/dio.dart';
+import 'package:easy_localization/easy_localization.dart';
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -28,6 +29,7 @@ part 'tour_state.dart';
 class TourBloc extends Bloc<TourEvent, TourState> {
   /// Servicio utilizado para optimizar rutas entre puntos de interés (POIs).
   final OptimizationService optimizationService;
+
   /// Bloc encargado de gestionar el mapa y los marcadores.
   final MapBloc mapBloc; 
 
@@ -194,18 +196,19 @@ class TourBloc extends Bloc<TourEvent, TourState> {
       // Eliminar el POI de la lista
       final updatedPois = List<PointOfInterest>.from(ecoCityTour.pois)
         ..remove(event.poi);
-
       // Si se elimina la ubicación actual, cambiar isJoined a false
+      if (event.poi.name == 'current_location'.tr()) {
+        log.i(
+            'El POI eliminado es la ubicación actual. Cambiando isJoined a false.');
+        emit(state.copyWith(isJoined: false));
+      }
+      // Optimizar el tour con los POIs restantes
       await _updateTourWithPois(updatedPois, emit);
 
-      // Eliminar el marcador del POI en el mapa
+      // Eliminar el marcador del mapa
       mapBloc.add(OnRemovePoiMarkerEvent(event.poi.name));
     } catch (e) {
-
-
-      // Optimizar el tour con los POIs restantes
       log.e('Error eliminando el POI: $e');
-      // Eliminar el marcador del mapa
       emit(state.copyWith(hasError: true));
     } finally {
       emit(state.copyWith(isLoading: false));
@@ -216,6 +219,7 @@ class TourBloc extends Bloc<TourEvent, TourState> {
   Future<void> _updateTourWithPois(
     List<PointOfInterest> pois, Emitter<TourState> emit) async {
     log.d('TourBloc: Updating tour with ${pois.length} POIs');
+    
     if (pois.isEmpty) {
       emit(state.copyWithNull());
       return;
@@ -262,29 +266,27 @@ class TourBloc extends Bloc<TourEvent, TourState> {
   }
 
   /// Carga un tour guardado específico desde el repositorio.
-  Future<void> _onLoadTourFromSaved(LoadTourFromSavedEvent event, Emitter<TourState> emit) async {
+  Future<void> _onLoadTourFromSaved(
+    LoadTourFromSavedEvent event, Emitter<TourState> emit) async {
   emit(state.copyWith(isLoading: true, hasError: false));
 
   try {
-    
-    final savedTour = await ecoCityTourRepository.getTourById(event.documentId);
+    final savedTour = 
+      await ecoCityTourRepository.getTourById(event.documentId);
 
-    if (savedTour != null) {
-      
+    if (savedTour != null) {   
       emit(state.copyWith(ecoCityTour: savedTour, isLoading: false));
       log.i('Tour cargado correctamente desde Firestore: ${savedTour.city}');
       
       // Pintar la ruta en el mapa
       await mapBloc.drawEcoCityTour(savedTour);
     } else {
-      log.w('El tour no existe o es nulo.');
+        log.w('El tour no existe o es nulo.');
+        emit(state.copyWith(isLoading: false, hasError: true));
+      }
+    } catch (e) {
+      log.e('Error al cargar el tour desde Firestore: $e');
       emit(state.copyWith(isLoading: false, hasError: true));
     }
-  } catch (e) {
-    log.e('Error al cargar el tour desde Firestore: $e');
-    emit(state.copyWith(isLoading: false, hasError: true));
   }
-}
-
-
 }
